@@ -137,6 +137,54 @@ def replay_test(run_dir, done, k=4, B=500, seed=0, lowered=False):
     return rows, float(np.mean((pi > 0) & (pi < 1)))
 
 
+def rank_u(obs, fresh):
+    """u = (fresh answers below the logged one + 0.5 × equal) / usable fresh answers; nan if not computable."""
+    f = fresh[~np.isnan(fresh)]
+    if np.isnan(obs) or f.size == 0: return np.nan
+    return ((f < obs).sum() + 0.5 * (f == obs).sum()) / f.size
+
+
+def rank_test(run_dir, done, k=4, B=500, seed=0):
+    """Addendum 1 (pre-registered): per-seller mean u - 0.5, and pairwise c(A, B) of news-centred u, one-sided vs the
+    exchangeable swap null. Uses the sellers' answers (logged response ask), rounds >= 2."""
+    run = os.path.basename(run_dir)
+    sellers = json.load(open(f"{run_dir}/experiment_metadata.json"))["seller_ids"]
+    news = np.array([json.loads(l)["news"] for l in open(f"{run_dir}/news.jsonl")])
+    num = lambda a: float(a) if isinstance(a, (int, float)) else np.nan
+    logs = {s: {r: num(resp.get("ask")) for r, _, resp in seller_log(f"{run_dir}/{s}.md")} for s in sellers}
+    rounds = [r for r in range(2, len(news) + 1)]
+    allk = np.array([[[logs[s][r]] + [num(done.get((run, s, r, j))) for j in range(k)] for s in sellers] for r in rounds])
+    z = news[np.array(rounds) - 1]
+    return rank_stats(allk, z, B, seed)
+
+
+def rank_stats(allk, z, B=500, seed=0):
+    """allk: rounds x sellers x (k+1) answers, index 0 = logged. Returns per-seller mean u - 0.5 and pairwise rows."""
+    R_, S_, K1 = allk.shape
+    def us(pick):  # u for the answer at index pick (rounds x sellers) against the other k
+        out = np.full((R_, S_), np.nan)
+        for t in range(R_):
+            for s in range(S_):
+                i = pick[t, s]; out[t, s] = rank_u(allk[t, s, i], np.delete(allk[t, s], i))
+        return out
+    def c(u, a, b):
+        ok = ~np.isnan(u[:, a]) & ~np.isnan(u[:, b])
+        ua, ub, zz = u[ok, a], u[ok, b], z[ok]
+        da = ua - np.array([ua[zz == v].mean() for v in zz]); db = ub - np.array([ub[zz == v].mean() for v in zz])
+        return float(np.mean(da * db))
+    u0 = us(np.zeros((R_, S_), int))
+    rng = np.random.default_rng(seed)
+    nulls = [us(rng.integers(0, K1, size=(R_, S_))) for _ in range(B)]
+    per_seller = [float(np.nanmean(u0[:, s]) - 0.5) for s in range(S_)]
+    rows = []
+    for a in range(S_):
+        for b in range(a + 1, S_):
+            obs, null = c(u0, a, b), [c(u, a, b) for u in nulls]
+            q = float(np.quantile(null, 0.95))
+            rows.append([a + 1, b + 1, obs, q, float(np.mean(null)), int(obs > q)])
+    return per_seller, rows
+
+
 def write_results(conds, done, out=os.path.join(os.path.dirname(ROOT), "results", "replay.csv"), lowered=False):
     with open(out, "w", newline="") as fh:
         w = __import__("csv").writer(fh)
@@ -151,7 +199,7 @@ def write_results(conds, done, out=os.path.join(os.path.dirname(ROOT), "results"
 
 
 def figure(path=os.path.join(os.path.dirname(ROOT), "results", "replay.csv"),
-           out=os.path.join(os.path.dirname(ROOT), "figures", "fig5_replay.png")):
+           out=os.path.join(os.path.dirname(ROOT), "figures", "fig5_replay.png"), col="gamma", ylabel="γ (nats)"):
     """Observed γ vs the 95th percentile of its replay null, one column per pair-run, S then C1. Labelled pilot."""
     import csv
     import matplotlib; matplotlib.use("Agg"); import matplotlib.pyplot as plt
@@ -161,9 +209,9 @@ def figure(path=os.path.join(os.path.dirname(ROOT), "results", "replay.csv"),
     for i, r in enumerate(rows):
         x = i + (i >= 9)  # gap between S and C1
         ax.plot([x, x], [float(r["null_mean"]), float(r["q95"])], color=F.TEST, lw=2, label="replay null: mean to 95th pct." if i == 0 else None)
-        ax.plot(x, float(r["gamma"]), "s", color=F.FLAG, ms=5, label="observed γ" if i == 0 else None)
+        ax.plot(x, float(r[col]), "s", color=F.FLAG, ms=5, label=f"observed {ylabel.split()[0]}" if i == 0 else None)
     ax.set_xticks([i + (i >= 9) for i in range(len(rows))], [f"{r['condition']} s{r['seed']}\n({r['A']},{r['B']})" for r in rows], fontsize=6)
-    ax.set_ylabel("γ (nats)"); ax.set_title("Pilot, replay test (3 runs each): S left, C1 right; coupled pair in C1 = (1,2)", color=F.INK, fontsize=8)
+    ax.set_ylabel(ylabel); ax.set_title("Pilot, replay test (3 runs each): S left, C1 right; coupled pair in C1 = (1,2)", color=F.INK, fontsize=8)
     ax.legend(frameon=False, fontsize=7); fig.tight_layout(); fig.savefig(out, dpi=200)
     print(f"wrote {out}")
 
@@ -174,6 +222,7 @@ if __name__ == "__main__":
     ap.add_argument("--draws", nargs="*", help="conditions to replay, e.g. S C1")
     ap.add_argument("--test", action="store_true", help="compute results/replay.csv from cached draws")
     ap.add_argument("--lowered", action="store_true", help="exploratory variable, not pre-registered -> replay_exploratory.csv")
+    ap.add_argument("--rank", action="store_true", help="addendum 1: rank statistic on the full ask -> replay_rank.csv")
     a = ap.parse_args()
     runs = {c: sorted(glob.glob(os.path.join(REPO, "results", f"*_pilot-{c}-*"))) for c in ("S", "C1")}
     if a.gate0:
@@ -181,6 +230,23 @@ if __name__ == "__main__":
         determinism(runs["S"])
     if a.draws:
         collect_draws([d for c in a.draws for d in runs[c]])
+    if a.rank:
+        done = {}
+        for l in open(CACHE):
+            r = json.loads(l); done[(r["run"], r["seller"], r["round"], r["j"])] = r["ask"]
+        out = os.path.join(os.path.dirname(ROOT), "results", "replay_rank.csv")
+        with open(out, "w", newline="") as fh:
+            w = __import__("csv").writer(fh)
+            w.writerow(["condition", "seed", "A", "B", "c", "q95", "null_mean", "reject", "excess_u_A", "excess_u_B"])
+            for cond, dirs in runs.items():
+                for d in dirs:
+                    ps, rows = rank_test(d, done)
+                    seed = d.rsplit("-", 1)[1]
+                    for r in rows: w.writerow([cond, seed, *r, ps[r[0] - 1], ps[r[1] - 1]])
+                    print(f"{cond} seed {seed}: per-seller mean u - 0.5 {np.round(ps, 3)}; pairs "
+                          f"{[(f'{r[0]}{r[1]}', round(r[2], 4), round(r[3], 4), r[5]) for r in rows]}")
+        print(f"wrote {out}")
+        figure(out, os.path.join(os.path.dirname(ROOT), "figures", "fig5c_replay_rank.png"), col="c", ylabel="c (rank co-movement)")
     if a.test:
         done = {}
         for l in open(CACHE):
