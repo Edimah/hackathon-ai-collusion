@@ -105,7 +105,7 @@ def run(T, seeds, shuffles, out="results/runs.csv"):
         w.writerow(["condition", "C", "seed", "A", "B", "gamma", "q95", "null_mean", "flag"])
         for i, (name, beta, kappa, lam) in enumerate(CONDITIONS):
             for cname, C in [("identity", IDENTITY), ("constant", CONSTANT)] if name == "E2" else [("identity", IDENTITY)]:
-                for seed in range(50 if name == "E1" else seeds):  # ponytail: E1 is a calibration test, 50 seeds
+                for seed in range(min(seeds, 50) if name == "E1" else seeds):  # ponytail: E1 is a calibration test, at most 50 seeds
                     rng = np.random.default_rng([seed, i])  # same seed, same data under both C
                     g, q, m, fl = detect(simulate(rng, T, beta, kappa, lam), C, rng, shuffles)
                     for a, b in PAIRS:
