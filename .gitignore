@@ -7,3 +7,4 @@ results/debug.csv
 .env
 BRIEF.md
 CLAUDE.md
+llm/work/

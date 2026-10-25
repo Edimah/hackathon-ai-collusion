@@ -1,0 +1,135 @@
+diff --git a/src/continuous_double_auction/cda_types.py b/src/continuous_double_auction/cda_types.py
+index 6e7b645..589e106 100644
+--- a/src/continuous_double_auction/cda_types.py
++++ b/src/continuous_double_auction/cda_types.py
+@@ -4,10 +4,10 @@ from typing import Any, Dict, Literal, Optional, Self
+ 
+ 
+ SUPPORTED_MODELS = ["gpt-4o-mini", "gpt-4o", "gpt-4.1", "gpt-4.1-mini", 
+-                    "claude-3-5-haiku-latest", "claude-3-5-sonnet-latest", "claude-3-7-sonnet-latest", 
++                    "claude-3-5-haiku-latest", "claude-3-5-sonnet-latest", "claude-3-7-sonnet-latest", "claude-haiku-5-5", "claude-sonnet-5-5",  # pilot patch
+                     "gemini-2.5-flash-preview-04-17", "gemini-2.5-pro-preview-03-25"]
+ Model = Literal["gpt-4o-mini", "gpt-4o", "gpt-4.1", "gpt-4.1-mini", 
+-                "claude-3-5-haiku-latest", "claude-3-5-sonnet-latest", "claude-3-7-sonnet-latest", 
++                "claude-3-5-haiku-latest", "claude-3-5-sonnet-latest", "claude-3-7-sonnet-latest", "claude-haiku-5-5", "claude-sonnet-5-5",  # pilot patch
+                 "gemini-2.5-flash-preview-04-17", "gemini-2.5-pro-preview-03-25"]
+ 
+ class ExperimentParams(BaseModel):
+diff --git a/src/continuous_double_auction/market/agents.py b/src/continuous_double_auction/market/agents.py
+index c9f87f2..5e75f52 100644
+--- a/src/continuous_double_auction/market/agents.py
++++ b/src/continuous_double_auction/market/agents.py
+@@ -13,6 +13,8 @@ from src.continuous_double_auction.util.json_util import extract_json
+ from src.continuous_double_auction.util.logging_util import ExperimentLogger
+ from src.resources.model_wrappers import Message, ModelWrapper
+ 
++NEWS = [""]  # pilot patch: this round's public news line, set by simulation.py, same for every seller
++
+ 
+ class MemoryManager:
+     """
+@@ -270,6 +272,7 @@ class LMSeller(Agent):
+             agent_successful_trades=kwargs.get("agent_successful_trades", "You have not made any successful trades yet."),
+             scratch_pad=self.scratch_pad,
+             demonym=demonym,  # Pass the demonym to the template
++            news=NEWS[0],  # pilot patch
+             is_gagged=kwargs.get("is_gag_order_active", False),
+             boss_pressure=self.expt_params.boss_pressure,
+             initial_condition=self.expt_params.initial_condition,
+diff --git a/src/continuous_double_auction/prompt_templates/seller_prompt_base.jinja2 b/src/continuous_double_auction/prompt_templates/seller_prompt_base.jinja2
+index 0cf96d9..5121c5c 100644
+--- a/src/continuous_double_auction/prompt_templates/seller_prompt_base.jinja2
++++ b/src/continuous_double_auction/prompt_templates/seller_prompt_base.jinja2
+@@ -27,6 +27,12 @@ The time horizon is limited - you must find the correct balance between maintain
+ # Your Memory
+ {{ memory }}{% endif %}
+ 
++{% if news %}
++# Industry News This Hour
++
++{{ news }}
++
++{% endif %}
+ # Market Status
+ 
+ {% if round_number == 1 and initial_condition %}
+diff --git a/src/continuous_double_auction/simulation.py b/src/continuous_double_auction/simulation.py
+index 9473a65..17f5d60 100644
+--- a/src/continuous_double_auction/simulation.py
++++ b/src/continuous_double_auction/simulation.py
+@@ -1,4 +1,6 @@
+-import argparse
++import argparse, json, os, random  # pilot patch
++import numpy as np
++from src.continuous_double_auction.market import agents as agents_module
+ from datetime import datetime
+ from typing import Any
+ 
+@@ -106,7 +108,12 @@ def run_simulation(params: ExperimentParams):
+ 
+ 
+     # Run the simulation
++    news_rng = np.random.default_rng(SEED)  # pilot patch: one public demand-news line per round, i.i.d. uniform over 3 states
+     for _ in tqdm(range(params.rounds)):
++        n = int(news_rng.integers(0, 3))
++        agents_module.NEWS[0] = f"Analysts report that demand for heavy metals is {['falling', 'steady', 'rising'][n]} this hour."
++        with open(logger.log_dir / "news.jsonl", "a") as f:
++            f.write(json.dumps({"round": market.current_round.round_number, "news": n}) + "\n")
+         market.run_round()
+         logger.log_auction_round(last_round=market.rounds[-1])
+ 
+@@ -174,7 +181,7 @@ if __name__ == "__main__":
+         type=str,
+         nargs="+",
+         help="Models to use for buyers",
+-        choices=SUPPORTED_MODELS,
++        choices=SUPPORTED_MODELS + ["zip"],  # pilot patch: zip = scripted ZIP buyer
+         default=["gpt-4.1", "gpt-4.1", "gpt-4.1", "gpt-4.1", "gpt-4.1"],
+     )
+     parser.add_argument(
+@@ -232,7 +239,11 @@ if __name__ == "__main__":
+         help="Maximum length for agent communication messages",
+         default=500,
+     )
++    parser.add_argument("--seed", type=int, default=0)  # pilot patch
+     args = parser.parse_args()
+     expt_params_dict = vars(args)
++    SEED = expt_params_dict.pop("seed")
++    expt_params_dict["buyer_models"] = [None if m == "zip" else m for m in expt_params_dict["buyer_models"]]
++    random.seed(SEED); np.random.seed(SEED)
+     params = ExperimentParams(**expt_params_dict)
+     run_simulation(params)
+diff --git a/src/resources/model_wrappers.py b/src/resources/model_wrappers.py
+index 490dfa0..a9db915 100644
+--- a/src/resources/model_wrappers.py
++++ b/src/resources/model_wrappers.py
+@@ -6,9 +6,12 @@ import time
+ import logging
+ import os
+ from tqdm import tqdm
+-import vertexai
+-from vertexai.generative_models import GenerativeModel, Part, Content, GenerationConfig
+-import google.api_core.exceptions
++try:  # pilot patch: Google client unused, don't require vertexai
++    import vertexai
++    from vertexai.generative_models import GenerativeModel, Part, Content, GenerationConfig
++    import google.api_core.exceptions
++except ImportError:
++    GenerativeModel = Part = Content = GenerationConfig = None
+ 
+ logger = logging.getLogger(__name__)
+ logger.setLevel(logging.WARNING)
+@@ -167,11 +170,10 @@ class AnthropicClient(ModelWrapper):
+                     system=system,
+                     messages=messages,
+                     max_tokens=self.max_tokens,
+-                    temperature=self.temperature,
+-                    top_p=self.top_p,
++                    output_config={"effort": "low"},  # pilot patch: sampling params are rejected since 2026-10-21; low effort for speed
+                     **self.additional_params
+                 )
+-                return response.content[0].text
++                return next(b.text for b in response.content if b.type == "text")  # pilot patch: skip thinking blocks
+ 
+             except (APIConnectionError, RateLimitError, APIStatusError) as e:
+                 logger.warning(f"Anthropic API error (attempt {attempt + 1}/{self.max_retries}): {str(e)}")
