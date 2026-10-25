@@ -29,6 +29,15 @@ def flag_rate(I, K, n=600, alpha=0.05):
     return 1 - ncx2.cdf(chi2.ppf(1 - alpha, d), d, 2 * n * I) if I > 0 else alpha
 
 
+def bic_flag_rate(I, K, n=600):
+    """Predicted flag rate of the Bayes (BIC) rule: flag a pair when 2n·γ̂ > K·log n, with d = K(r-1)(c-1) = K here.
+    Same asymptotics as flag_rate (2n·γ̂ ≈ non-central χ²_d with non-centrality 2nI), only the threshold changes:
+    BIC's K·log n grows with n, the test's χ²_d 95% quantile does not."""
+    d = K
+    threshold = K * np.log(n)
+    return 1 - ncx2.cdf(threshold, d, 2 * n * I)
+
+
 def null_bias(K, n=600):
     """Expected plug-in γ under the null: K(r-1)(c-1)/(2n)."""
     return K * (R - 1) * (C_ - 1) / (2 * n)
@@ -40,6 +49,10 @@ if __name__ == "__main__":
     assert true_cmi(1.0, 0.0, np.zeros(6, int)) > 0.01            # news hidden: common cause shows up
     assert true_cmi(1.0, 1.0, ident) > true_cmi(1.0, 0.5, ident)  # stronger hidden term, more dependence
     assert abs(flag_rate(0.0, 5) - 0.05) < 1e-12 and abs(null_bias(5) - 5 / 1200) < 1e-15
+    assert bic_flag_rate(0.0, 5) < 1e-4                                        # no dependence: BIC almost never flags
+    assert bic_flag_rate(0.0, 5, 6000) < bic_flag_rate(0.0, 5, 600)            # and less and less as n grows
+    assert bic_flag_rate(0.0104, 5) < flag_rate(0.0104, 5)                     # λ = 1: stricter than the 5% test
+    assert bic_flag_rate(0.0104, 5, 6000) > 0.99                               # but real dependence wins with more data
     for lam in np.arange(0, 2.01, 0.25):
         I = true_cmi(1.0, lam, ident)
         print(f"lambda={lam:.2f}  I={I:.5f}  predicted flag rate={flag_rate(I, 5):.1%}")
