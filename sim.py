@@ -28,19 +28,21 @@ def cmi(x, y, z):
     for v in np.unique(z):                          # each possible news value
         xs, ys = x[z == v], y[z == v]               # rounds with that news
         pz = len(xs) / len(x)                       # p̂(z = v)
-        pxy = np.bincount(2 * xs + ys, minlength=4).reshape(2, 2) / len(xs)  # p̂(x, y | v), 2x2 w/ codification turning each agent pair into a single integer 0..3 and minlength=4 to ensure all combinations are counted even when missing (as zero)
+        pxy = np.bincount(2 * xs + ys, minlength=4).reshape(2, 2) / len(xs)  # p̂(x, y | v), 2x2: codes each (price A, price B) combination as one integer 0..3; minlength=4 counts missing combinations as zero
         px, py = pxy.sum(1), pxy.sum(0)             # marginals p̂(x | v), p̂(y | v)
-        nz = pxy > 0                                # skip empty cells forcing "0 log 0 = 0" (avoid underflow warnings)
+        nz = pxy > 0                                # skip empty cells: 0 log 0 = 0 by convention (log(0) would give nan and a warning)
         I += pz * np.sum(pxy[nz] * np.log(pxy[nz] / np.outer(px, py)[nz]))
     return I # conditional mutual information (mutual information of agents x and y, conditioned on news z)
-
-    raise NotImplementedError
 
 
 def shuffle_within(y, z, rng):
     """Return a copy of y permuted at random within each value of z (z itself unchanged)."""
-    # TODO(Edimah)
-    raise NotImplementedError
+
+    y2 = y.copy()                                   # safeguard to never modify B's original column
+    for v in np.unique(z):                          # each news value
+        idx = np.flatnonzero(z == v)                # rounds with that news
+        y2[idx] = y[rng.permutation(idx)]           # B's prices reshuffled among those rounds only
+    return y2 # new shuffled column of prices for agent B (preserves the distribution of prices for each news value v)
 
 
 def flag(gamma, q95, a, b):
