@@ -5,6 +5,7 @@ import numpy as np
 T, SEEDS, SHUFFLES = 600, 200, 500
 BETA, KAPPA, LAM = 1.0, 0.2, 1.0  # set by Edimah, 24 Oct 
 IDENTITY, CONSTANT = np.arange(6), np.zeros(6, int)  # C as a lookup table: N_obs = C[N]
+DIAL = {"K5": IDENTITY, "K3": np.array([0, 0, 0, 1, 2, 2]), "K2": np.array([0, 0, 0, 0, 1, 1]), "K1": CONSTANT}  # adjacent merges: {12}{3}{45}, {123}{45}
 PAIRS = list(itertools.combinations(range(4), 2))  # 6 pairs (A, B) with A < B, agents 0..3 = agents 1..4; one test per pair (Edimah, 25 Oct)
 
 
@@ -97,16 +98,18 @@ def show(seed=0, rows=8):
             print("  " + "  ".join(map(str, r)))
 
 
-def run(T, seeds, shuffles, out="results/runs.csv"):
-    """Every condition x seed: one CSV row per ordered pair with γ, null q95, null mean, flag."""
+def run(T, seeds, shuffles, out="results/runs.csv", views=None, only=None, conds=None):
+    """Every condition x auditor view x seed: one CSV row per pair with γ, null q95, null mean, flag.
+    views: {name: C} for every condition (default: identity, plus constant for E2 and E4); only: condition names to run; conds: replaces CONDITIONS."""
     os.makedirs("results", exist_ok=True)
     with open(out, "w", newline="") as f:
         w = csv.writer(f)
         w.writerow(["condition", "C", "seed", "A", "B", "gamma", "q95", "null_mean", "flag"])
-        for i, (name, beta, kappa, lam) in enumerate(CONDITIONS):
-            for cname, C in [("identity", IDENTITY), ("constant", CONSTANT)] if name in ("E2", "E4") else [("identity", IDENTITY)]:
+        for i, (name, beta, kappa, lam) in enumerate(conds or CONDITIONS):
+            if only and name not in only: continue
+            for cname, C in (views or ({"identity": IDENTITY, "constant": CONSTANT} if name in ("E2", "E4") else {"identity": IDENTITY})).items():
                 for seed in range(min(seeds, 50) if name == "E1" else seeds):  # ponytail: E1 is a calibration test, at most 50 seeds
-                    rng = np.random.default_rng([seed, i])  # same seed, same data under both C
+                    rng = np.random.default_rng([seed, i])  # same seed, same data under every C (dial K5/K1 = runs identity/constant)
                     g, q, m, fl = detect(simulate(rng, T, beta, kappa, lam), C, rng, shuffles)
                     for a, b in PAIRS:
                         w.writerow([name, cname, seed, a + 1, b + 1, g[a, b], q[a, b], m[a, b], int(fl[a, b])])
@@ -115,6 +118,7 @@ def run(T, seeds, shuffles, out="results/runs.csv"):
 
 CONDITIONS = [("E1", 0.0, 0.0, 0.0), ("E2", BETA, 0.0, 0.0), ("E2b", BETA, 0.0, LAM),
               ("E3", 0.0, KAPPA, 0.0), ("E4", BETA, KAPPA, 0.0)]
+LAMBDAS = [("E2b-lambda%.2f" % l, BETA, 0.0, l) for l in np.arange(0, 2.01, 0.25)]  # Fig 2 sweep
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
@@ -122,8 +126,12 @@ if __name__ == "__main__":
     ap.add_argument("--show", action="store_true")
     ap.add_argument("--debug", action="store_true", help="3 seeds, 100 rounds")
     ap.add_argument("--all", action="store_true")
+    ap.add_argument("--dial", action="store_true", help="observability dial only")
+    ap.add_argument("--lam", action="store_true", help="λ sweep only")
     a = ap.parse_args()
     if a.test: selftest()
     if a.show: show()
     if a.debug: run(100, 3, SHUFFLES, "results/debug.csv")
     if a.all: run(T, 100, SHUFFLES, "results/accept.csv"); run(T, SEEDS, SHUFFLES)  # acceptance checks (100 seeds), then the full grid
+    if a.all or a.lam: run(T, SEEDS, SHUFFLES, "results/lambda.csv", views={"identity": IDENTITY}, conds=LAMBDAS)  # λ sweep
+    if a.all or a.dial: run(T, SEEDS, SHUFFLES, "results/dial.csv", views=DIAL, only=("E2", "E4"))  # observability dial
