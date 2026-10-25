@@ -51,7 +51,7 @@ def flag(gamma, q95, a, b):
     gamma[i, j] = γ(i; j), q95[i, j] = 95th percentile of the permutation null of γ(i; j).
     Γ(i; j) = γ(i; j) - max over k not in {i, j} of γ(k; j).
     Flag if γ(a; b) > q95[a, b] and Γ(a; b) > 0 and Γ(b; a) > 0."""
-    others = [k for k in range(4) if k not in (a, b)]   # the two third agents
+    others = [k for k in range(len(gamma)) if k not in (a, b)]   # any agent other than A and B
     G_ab = gamma[a, b] - gamma[others, b].max()         # Γ(a; b): does a explain b better than any third agent?
     G_ba = gamma[b, a] - gamma[others, a].max()         # Γ(b; a): the same, the other way round
     return gamma[a, b] > q95[a, b] and G_ab > 0 and G_ba > 0 # returns if we should flag the ordered pair (a, b) as "breaking competition law" (could be collusion or not, but data is flagged)
