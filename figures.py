@@ -20,6 +20,44 @@ def wilson(k, n, z=1.96):
     return c - h, c + h
 
 
+def cluster_bootstrap_ci(values, cluster_ids, B=10000, alpha=0.05, seed=None):
+    """Percentile CI for the mean, resampling whole clusters with replacement.
+    Copied from Edimah's hackathon-secret-loyalties/src/inference.py (github.com/Edimah/hackathon-secret-loyalties)."""
+    values = np.asarray(values, dtype=float)
+    cluster_ids = np.asarray(cluster_ids)
+    if values.shape != cluster_ids.shape:
+        raise ValueError("values and cluster_ids must have the same shape")
+    clusters, inverse = np.unique(cluster_ids, return_inverse=True)
+    k = clusters.size
+    sums = np.bincount(inverse, weights=values, minlength=k)
+    counts = np.bincount(inverse, minlength=k)
+    rng = np.random.default_rng(seed)
+    pick = rng.integers(0, k, size=(B, k))
+    boot = sums[pick].sum(axis=1) / counts[pick].sum(axis=1)
+    lo, hi = np.quantile(boot, [alpha / 2, 1 - alpha / 2])
+    return values.mean(), lo, hi
+
+
+def pooled_table(paths=("results/runs.csv", "results/dial.csv"), out="results/pooled.csv"):
+    """Innocent-pair flag and test rates pooled over pairs, 95% CI by cluster bootstrap over seeds (pairs within a
+    seed share the news, so they are not independent). Innocent = not (2,3) in E3/E4, not (1,4) in E2b."""
+    with open(out, "w", newline="") as fh:
+        w = csv.writer(fh)
+        w.writerow(["source", "condition", "C", "rate", "estimate", "lo", "hi", "n_seeds"])
+        for path in paths:
+            rows = defaultdict(list)
+            for r in csv.DictReader(open(path)):
+                p = r["A"] + r["B"]
+                if (r["condition"] in ("E3", "E4") and p == "23") or (r["condition"] == "E2b" and p == "14"): continue
+                rows[(r["condition"], r["C"])].append((r["seed"], float(r["gamma"]) > float(r["q95"]), int(r["flag"])))
+            for (c, C), v in sorted(rows.items()):
+                seeds = [s for s, _, _ in v]
+                for name, i in (("test", 1), ("flag", 2)):
+                    est, lo, hi = cluster_bootstrap_ci([x[i] for x in v], seeds, seed=0)
+                    w.writerow([os.path.basename(path), c, C, name, est, lo, hi, len(set(seeds))])
+    print(f"wrote {out}")
+
+
 def rates(path):
     """{(condition, C, 'AB'): [test rejects, flags, n]} from one results CSV."""
     out = defaultdict(lambda: [0, 0, 0])
@@ -79,19 +117,38 @@ def fig3(path="results/dial.csv"):
     ax.legend(frameon=False, fontsize=7); fig.tight_layout(); fig.savefig("figures/fig3_null_bias.png", dpi=200)
 
 
-def fig_dial(R):
+BIC = "#1baf7a"  # dataviz palette slot 3; contrast WARN, so it always has its own marker (triangle) and legend label
+
+
+def bic_count(path, c, C, p, K, n):
+    """Seeds where the Bayes (BIC) rule flags the pair: 2n·γ > K·log n (n rounds, K news states seen)."""
+    v = [2 * n * float(r["gamma"]) > K * np.log(n) for r in csv.DictReader(open(path)) if (r["condition"], r["C"], r["A"] + r["B"]) == (c, C, p)]
+    return sum(v), len(v)
+
+
+def fig_dial(R, R6000=None):
+    """Dial: E2 innocent pair at T = 600 (and T = 6000 if given), E4 pairs at T = 600. Test-only, flag and Bayes
+    (BIC) rates with Wilson intervals; theory lines for E2: test (solid), BIC (dashed). 5% reference dotted."""
     Ks = [5, 3, 2, 1]
-    fig, axs = plt.subplots(1, 3, figsize=(10, 3), sharey=True)
-    for ax, (c, p, title) in zip(axs, [("E2", "14", "E2, innocent pair (1,4)"), ("E4", "14", "E4, innocent pair (1,4)"),
-                                       ("E4", "23", "E4, colluding pair (2,3)")]):
+    panels = [("E2", "14", "E2, innocent pair (1,4), T = 600", R, "results/dial.csv", 600)]
+    if R6000: panels.append(("E2", "14", "E2, innocent pair (1,4), T = 6000", R6000, "results/dial_T6000.csv", 6000))
+    panels += [("E4", "14", "E4, innocent pair (1,4), T = 600", R, "results/dial.csv", 600),
+               ("E4", "23", "E4, colluding pair (2,3), T = 600", R, "results/dial.csv", 600)]
+    fig, axs = plt.subplots(1, len(panels), figsize=(3.4 * len(panels), 3.2), sharey=True)
+    for ax, (c, p, title, RR, path, n) in zip(axs, panels):
         for i, k in enumerate(Ks):
-            dots(ax, i, *R[(c, f"K{k}", p)], label=ax is axs[0] and i == 0)
+            dots(ax, i, *RR[(c, f"K{k}", p)], dx=0.15, label=ax is axs[0] and i == 0)
+            kb, nb = bic_count(path, c, f"K{k}", p, k, n)
+            lo, hi = wilson(kb, nb)
+            ax.errorbar(i, kb / nb, yerr=[[kb / nb - lo], [hi - kb / nb]], fmt="^", color=BIC, ms=5, lw=1.2, capsize=0,
+                        label="Bayes rule (2nγ > K log n)" if ax is axs[0] and i == 0 else None)
         if c == "E2":
-            ax.plot(range(4), [theory.flag_rate(theory.true_cmi(sim.BETA, 0.0, sim.DIAL[f"K{k}"]), k) for k in Ks],
-                    color=THEORY, lw=1.5, label="theory, test only")
-        ax.axhline(0.05, color=THEORY, ls="--", lw=1)
-        ax.set_xticks(range(4), [str(k) for k in Ks]); ax.set_xlabel("news states seen by the auditor, K"); ax.set_title(title, color=INK)
-    axs[0].set_ylabel("share of seeds"); axs[0].set_ylim(-0.02, 1.02); axs[0].legend(frameon=False, fontsize=7)
+            I = [theory.true_cmi(sim.BETA, 0.0, sim.DIAL[f"K{k}"]) for k in Ks]
+            ax.plot(range(4), [theory.flag_rate(x, k, n) for x, k in zip(I, Ks)], color=THEORY, lw=1.5, label="theory, test only" if ax is axs[0] else None)
+            ax.plot(range(4), [theory.bic_flag_rate(x, k, n) for x, k in zip(I, Ks)], color=THEORY, lw=1.5, ls="--", label="theory, Bayes rule" if ax is axs[0] else None)
+        ax.axhline(0.05, color=THEORY, ls=":", lw=1)
+        ax.set_xticks(range(4), [str(k) for k in Ks]); ax.set_xlabel("news states seen by the auditor, K"); ax.set_title(title, color=INK, fontsize=8)
+    axs[0].set_ylabel("share of seeds"); axs[0].set_ylim(-0.02, 1.02); axs[0].legend(frameon=False, fontsize=6)
     fig.tight_layout(); fig.savefig("figures/fig_dial.png", dpi=200)
 
 
@@ -101,5 +158,7 @@ if __name__ == "__main__":
     os.makedirs("figures", exist_ok=True)
     fig1(rates("results/runs.csv"))
     if os.path.exists("results/lambda.csv"): fig2(rates("results/lambda.csv"))
-    if os.path.exists("results/dial.csv"): fig3(); fig_dial(rates("results/dial.csv"))
+    if os.path.exists("results/dial.csv"):
+        fig3(); fig_dial(rates("results/dial.csv"), rates("results/dial_T6000.csv") if os.path.exists("results/dial_T6000.csv") else None)
+    pooled_table()
     print("wrote figures/")
