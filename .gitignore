@@ -5,3 +5,5 @@ __pycache__/
 .vscode/
 results/debug.csv
 .env
+BRIEF.md
+CLAUDE.md
