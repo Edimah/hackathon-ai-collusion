@@ -3,9 +3,9 @@ import argparse, csv, itertools, os
 import numpy as np
 
 T, SEEDS, SHUFFLES = 600, 200, 500
-BETA, KAPPA, LAM = 1.0, 0.2, 1.0  # set by Edimah, 24 Oct
+BETA, KAPPA, LAM = 1.0, 0.2, 1.0  # set by Edimah, 24 Oct 
 IDENTITY, CONSTANT = np.arange(6), np.zeros(6, int)  # C as a lookup table: N_obs = C[N]
-PAIRS = list(itertools.permutations(range(4), 2))  # 12 ordered pairs, agents 0..3 = agents 1..4
+PAIRS = list(itertools.combinations(range(4), 2))  # 6 pairs (A, B) with A < B, agents 0..3 = agents 1..4; one test per pair (Edimah, 25 Oct)
 
 
 def simulate(rng, T, beta, kappa=0.0, lam=0.0):
@@ -58,11 +58,11 @@ def flag(gamma, q95, a, b):
 
 
 def detect(L, C, rng, shuffles):
-    """γ, null 95th percentile and null mean for the 12 ordered pairs, then the 12 flags."""
+    """γ, null 95th percentile (shuffling B) and null mean for the 6 pairs A < B, then the 6 flags."""
     z, P = C[L[:, 0]], L[:, 1:]
     gamma, q95, null_mean = np.zeros((4, 4)), np.zeros((4, 4)), np.zeros((4, 4))
     for a, b in PAIRS:
-        gamma[a, b] = cmi(P[:, a], P[:, b], z)
+        gamma[a, b] = gamma[b, a] = cmi(P[:, a], P[:, b], z)  # symmetric; Γ needs both halves
         null = [cmi(P[:, a], shuffle_within(P[:, b], z, rng), z) for _ in range(shuffles)]
         q95[a, b], null_mean[a, b] = np.quantile(null, 0.95), np.mean(null)
     return gamma, q95, null_mean, {(a, b): flag(gamma, q95, a, b) for a, b in PAIRS}
@@ -104,7 +104,7 @@ def run(T, seeds, shuffles, out="results/runs.csv"):
         w = csv.writer(f)
         w.writerow(["condition", "C", "seed", "A", "B", "gamma", "q95", "null_mean", "flag"])
         for i, (name, beta, kappa, lam) in enumerate(CONDITIONS):
-            for cname, C in [("identity", IDENTITY), ("constant", CONSTANT)] if name == "E2" else [("identity", IDENTITY)]:
+            for cname, C in [("identity", IDENTITY), ("constant", CONSTANT)] if name in ("E2", "E4") else [("identity", IDENTITY)]:
                 for seed in range(min(seeds, 50) if name == "E1" else seeds):  # ponytail: E1 is a calibration test, at most 50 seeds
                     rng = np.random.default_rng([seed, i])  # same seed, same data under both C
                     g, q, m, fl = detect(simulate(rng, T, beta, kappa, lam), C, rng, shuffles)
@@ -126,4 +126,4 @@ if __name__ == "__main__":
     if a.test: selftest()
     if a.show: show()
     if a.debug: run(100, 3, SHUFFLES, "results/debug.csv")
-    if a.all: run(T, SEEDS, SHUFFLES)
+    if a.all: run(T, 100, SHUFFLES, "results/accept.csv"); run(T, SEEDS, SHUFFLES)  # acceptance checks (100 seeds), then the full grid
