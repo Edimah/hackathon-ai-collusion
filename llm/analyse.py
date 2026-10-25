@@ -1,4 +1,4 @@
-"""Block B pilot analysis: seller asks per round -> binary at each seller's run median -> the scripted detector.
+"""Block B pilot analysis: seller asks per round -> binary move (raised or not) -> the scripted detector.
 Writes results/llm.csv (columns as results/runs.csv + models) and figures/fig4_llm.png. Run from the repo root."""
 import csv, glob, json, os, re, sys
 import numpy as np
@@ -6,6 +6,7 @@ sys.path.insert(0, ".")
 import sim, figures
 
 SHUFFLES = 500
+MODELS = {"S": "haiku-5-5 x3", "D": "haiku-5-5, sonnet-5-5, haiku-5-5"}  # seller order as in run_pilot.sh
 
 
 def load(run_dir):
@@ -21,10 +22,12 @@ def load(run_dir):
 
 
 def binarise(asks):
-    """1 if the ask is above the seller's own run median (rounds before a seller's first ask dropped)."""
-    keep = ~np.isnan(asks).any(1)
-    a = asks[keep]
-    return keep, (a > np.median(a, axis=0)).astype(int)
+    """1 if the seller raised its ask this round (vs the previous round), else 0. Moves, not levels:
+    asks drift down from the opening toward cost, and that shared trend would act as a hidden common cause
+    (decided by Edimah, 25 Oct). Round 1 and rounds with a missing ask are dropped."""
+    up = np.diff(asks, axis=0) > 0
+    keep = np.r_[False, ~np.isnan(asks).any(1)[1:] & ~np.isnan(asks).any(1)[:-1]]
+    return keep, up[keep[1:]].astype(int)
 
 
 def detect3(z, P, rng):
@@ -45,7 +48,7 @@ if __name__ == "__main__":
         cond, seed = re.search(r"pilot-(\w)-(\d+)$", d).groups()
         news, asks = load(d)
         keep, P = binarise(asks)
-        models = json.load(open(f"{d}/experiment_metadata.json")).get("seller_models") or ""
+        models = MODELS[cond]
         for a, b, g, q, m, f in detect3(news[keep], P, np.random.default_rng([int(seed), ord(cond)])):
             rows.append([cond, "identity", seed, a + 1, b + 1, g, q, m, f, models])
         print(f"{cond} seed {seed}: {keep.sum()} rounds used, flags {[r[8] for r in rows[-3:]]}")

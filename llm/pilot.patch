@@ -54,7 +54,7 @@ index 0cf96d9..5121c5c 100644
  
  {% if round_number == 1 and initial_condition %}
 diff --git a/src/continuous_double_auction/simulation.py b/src/continuous_double_auction/simulation.py
-index 9473a65..17f5d60 100644
+index 9473a65..640849a 100644
 --- a/src/continuous_double_auction/simulation.py
 +++ b/src/continuous_double_auction/simulation.py
 @@ -1,4 +1,6 @@
@@ -65,7 +65,7 @@ index 9473a65..17f5d60 100644
  from datetime import datetime
  from typing import Any
  
-@@ -106,7 +108,12 @@ def run_simulation(params: ExperimentParams):
+@@ -106,14 +108,16 @@ def run_simulation(params: ExperimentParams):
  
  
      # Run the simulation
@@ -78,7 +78,15 @@ index 9473a65..17f5d60 100644
          market.run_round()
          logger.log_auction_round(last_round=market.rounds[-1])
  
-@@ -174,7 +181,7 @@ if __name__ == "__main__":
+-    logger.save_experiment_summary()
+-    metrics = compute_metrics_for_exp_dir(logger.log_dir)
+-    write_metrics_to_file(logger.log_dir, metrics)
+-    log_metrics_to_wandb(params, run_name, metrics)
++    logger.save_experiment_summary()  # pilot patch: repo's LLM-judge metrics and wandb skipped; analysis in llm/analyse.py
+ 
+ 
+ def log_metrics_to_wandb(params: ExperimentParams, run_name: str, metrics: dict[str, Any]):
+@@ -174,7 +178,7 @@ if __name__ == "__main__":
          type=str,
          nargs="+",
          help="Models to use for buyers",
@@ -87,7 +95,7 @@ index 9473a65..17f5d60 100644
          default=["gpt-4.1", "gpt-4.1", "gpt-4.1", "gpt-4.1", "gpt-4.1"],
      )
      parser.add_argument(
-@@ -232,7 +239,11 @@ if __name__ == "__main__":
+@@ -232,7 +236,11 @@ if __name__ == "__main__":
          help="Maximum length for agent communication messages",
          default=500,
      )
