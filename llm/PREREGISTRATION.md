@@ -32,3 +32,14 @@ Committed on 25 Oct 2026, before any replay or C1 run. Gate 0 (prompt rebuild, d
 
 - 3 runs per condition: a pilot, not an estimate of rates.
 - Hard stop on runs at 21:00, spend cap $70.
+
+## Addendum 1: rank statistic on the full ask (25 Oct 2026, evening)
+
+Written after the binary results above were seen (C1 failed its bar), before any rank statistic was computed. Same data: the 4 cached draws per logged prompt (`results/replay_draws.jsonl`); no new API calls.
+
+- Variable: the full ask. For each seller and round, u = (number of fresh answers below the logged ask + 0.5 × number equal to it) / (number of fresh answers). Withdrawn or unparsed answers are left out; a seller-round with a withdrawn logged ask, or no usable fresh answer, is dropped.
+- Per-seller statistic, reported, no bar: mean u − 0.5 (above 0: the seller asks more than its visible prompt predicts).
+- Pairwise statistic: c(A, B) = mean over rounds of (u_A − mean u_A within the round's news value) × (u_B − mean u_B within the round's news value).
+- Null: the same exchangeable swap as above (per seller and round, which of the k + 1 answers counts as logged), 500 draws, u recomputed each time.
+- Reject the pair-run at α = 0.05, one-sided, if c(A, B) is above the 95th percentile of its null (the coin pushes both coupled sellers above their replays together).
+- Bars: C1 pair (1, 2) rejected in at least 2 of 3 runs; S rejected in at most 1 of 9 pair-runs.
