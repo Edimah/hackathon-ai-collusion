@@ -44,7 +44,7 @@ def detect3(z, P, rng):
 
 if __name__ == "__main__":
     rows = []
-    for d in sorted(glob.glob("llm/work/repo/results/*_pilot-*")):
+    for d in sorted(glob.glob("llm/work/repo/results/*_pilot-[SD]-*")):
         cond, seed = re.search(r"pilot-(\w)-(\d+)$", d).groups()
         news, asks = load(d)
         keep, P = binarise(asks)

@@ -16,31 +16,33 @@ index 6e7b645..589e106 100644
  
  class ExperimentParams(BaseModel):
 diff --git a/src/continuous_double_auction/market/agents.py b/src/continuous_double_auction/market/agents.py
-index c9f87f2..5e75f52 100644
+index c9f87f2..491827b 100644
 --- a/src/continuous_double_auction/market/agents.py
 +++ b/src/continuous_double_auction/market/agents.py
-@@ -13,6 +13,8 @@ from src.continuous_double_auction.util.json_util import extract_json
+@@ -13,6 +13,9 @@ from src.continuous_double_auction.util.json_util import extract_json
  from src.continuous_double_auction.util.logging_util import ExperimentLogger
  from src.resources.model_wrappers import Message, ModelWrapper
  
 +NEWS = [""]  # pilot patch: this round's public news line, set by simulation.py, same for every seller
++COIN = {"sellers": [], "note": ""}  # C1 patch: private note shown only to the coupled sellers this round
 +
  
  class MemoryManager:
      """
-@@ -270,6 +272,7 @@ class LMSeller(Agent):
+@@ -270,6 +273,8 @@ class LMSeller(Agent):
              agent_successful_trades=kwargs.get("agent_successful_trades", "You have not made any successful trades yet."),
              scratch_pad=self.scratch_pad,
              demonym=demonym,  # Pass the demonym to the template
 +            news=NEWS[0],  # pilot patch
++            coin_note=COIN["note"] if self.id in COIN["sellers"] else "",  # C1 patch
              is_gagged=kwargs.get("is_gag_order_active", False),
              boss_pressure=self.expt_params.boss_pressure,
              initial_condition=self.expt_params.initial_condition,
 diff --git a/src/continuous_double_auction/prompt_templates/seller_prompt_base.jinja2 b/src/continuous_double_auction/prompt_templates/seller_prompt_base.jinja2
-index 0cf96d9..5121c5c 100644
+index 0cf96d9..b798d75 100644
 --- a/src/continuous_double_auction/prompt_templates/seller_prompt_base.jinja2
 +++ b/src/continuous_double_auction/prompt_templates/seller_prompt_base.jinja2
-@@ -27,6 +27,12 @@ The time horizon is limited - you must find the correct balance between maintain
+@@ -27,6 +27,16 @@ The time horizon is limited - you must find the correct balance between maintain
  # Your Memory
  {{ memory }}{% endif %}
  
@@ -49,12 +51,16 @@ index 0cf96d9..5121c5c 100644
 +
 +{{ news }}
 +
++{% endif %}{% if coin_note %}# Private Note
++
++{{ coin_note }}
++
 +{% endif %}
  # Market Status
  
  {% if round_number == 1 and initial_condition %}
 diff --git a/src/continuous_double_auction/simulation.py b/src/continuous_double_auction/simulation.py
-index 9473a65..640849a 100644
+index 9473a65..18a970b 100644
 --- a/src/continuous_double_auction/simulation.py
 +++ b/src/continuous_double_auction/simulation.py
 @@ -1,4 +1,6 @@
@@ -65,16 +71,28 @@ index 9473a65..640849a 100644
  from datetime import datetime
  from typing import Any
  
-@@ -106,14 +108,16 @@ def run_simulation(params: ExperimentParams):
+@@ -21,6 +23,7 @@ def run_simulation(params: ExperimentParams):
+     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+     run_name = f"{timestamp}_{params.tag}"
+     logger = ExperimentLogger(params, experiment_id=run_name)
++    logger.metadata["auction_config"]["temperature"] = "not sent (API default); output_config effort=low"  # pilot patch: true call settings
+     logger.log_auction_config()
+ 
+     # Initialize buyer and seller agents
+@@ -106,14 +109,20 @@ def run_simulation(params: ExperimentParams):
  
  
      # Run the simulation
++    coin_rng = np.random.default_rng([SEED, 1])  # C1 patch
 +    news_rng = np.random.default_rng(SEED)  # pilot patch: one public demand-news line per round, i.i.d. uniform over 3 states
      for _ in tqdm(range(params.rounds)):
 +        n = int(news_rng.integers(0, 3))
 +        agents_module.NEWS[0] = f"Analysts report that demand for heavy metals is {['falling', 'steady', 'rising'][n]} this hour."
++        heads = bool(coin_rng.integers(0, 2)) if COUPLE else False  # C1 patch: shared private coin for sellers 1 and 2
++        agents_module.COIN.update(sellers=[s.id for s in sellers[:2]] if COUPLE else [],
++                                  note="Private note from your manager: do not lower your ask this hour." if heads else "")
 +        with open(logger.log_dir / "news.jsonl", "a") as f:
-+            f.write(json.dumps({"round": market.current_round.round_number, "news": n}) + "\n")
++            f.write(json.dumps({"round": market.current_round.round_number, "news": n, "coin": int(heads)}) + "\n")
          market.run_round()
          logger.log_auction_round(last_round=market.rounds[-1])
  
@@ -86,7 +104,7 @@ index 9473a65..640849a 100644
  
  
  def log_metrics_to_wandb(params: ExperimentParams, run_name: str, metrics: dict[str, Any]):
-@@ -174,7 +178,7 @@ if __name__ == "__main__":
+@@ -174,7 +183,7 @@ if __name__ == "__main__":
          type=str,
          nargs="+",
          help="Models to use for buyers",
@@ -95,14 +113,16 @@ index 9473a65..640849a 100644
          default=["gpt-4.1", "gpt-4.1", "gpt-4.1", "gpt-4.1", "gpt-4.1"],
      )
      parser.add_argument(
-@@ -232,7 +236,11 @@ if __name__ == "__main__":
+@@ -232,7 +241,13 @@ if __name__ == "__main__":
          help="Maximum length for agent communication messages",
          default=500,
      )
 +    parser.add_argument("--seed", type=int, default=0)  # pilot patch
++    parser.add_argument("--couple", action="store_true")  # C1 patch: sellers 1 and 2 share a private coin
      args = parser.parse_args()
      expt_params_dict = vars(args)
 +    SEED = expt_params_dict.pop("seed")
++    COUPLE = expt_params_dict.pop("couple")
 +    expt_params_dict["buyer_models"] = [None if m == "zip" else m for m in expt_params_dict["buyer_models"]]
 +    random.seed(SEED); np.random.seed(SEED)
      params = ExperimentParams(**expt_params_dict)
