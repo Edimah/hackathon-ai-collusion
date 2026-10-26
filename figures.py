@@ -73,7 +73,7 @@ def rates(path):
 
 def dots(ax, x, k_test, k_flag, n, dx=0.12, label=True):
     """Test-only rate and flag rate side by side at x, each with its Wilson interval."""
-    for k, col, mk, off, name in [(k_test, TEST, "o", -dx, "test rejects (γ > q95)"), (k_flag, FLAG, "s", dx, "flag (test + Γ rule)")]:
+    for k, col, mk, off, name in [(k_test, TEST, "o", -dx, "standard test ($\\hat{I}$ above its 95% shuffle threshold)"), (k_flag, FLAG, "s", dx, "test + ranking rule (Γ)")]:
         lo, hi = wilson(k, n)
         ax.errorbar(x + off, k / n, yerr=[[k / n - lo], [hi - k / n]], fmt=mk, color=col, ms=5, lw=1.2, capsize=0,
                     label=name if label else None)
@@ -115,12 +115,13 @@ def fig3(path="results/dial.csv"):
         if r["condition"] == "E2": m[r["C"]].append(float(r["null_mean"]))
     Ks = [5, 3, 2, 1]
     fig, ax = plt.subplots(figsize=(4, 3))
-    ax.plot(Ks, [np.mean(m[f"K{k}"]) for k in Ks], "o", color=TEST, ms=6, label="mean of shuffled γ (E2)")
+    ax.plot(Ks, [np.mean(m[f"K{k}"]) for k in Ks], "o", color=TEST, ms=6, label="mean of shuffled $\\hat{I}$ (E2)")
     ax.plot(Ks, [theory.null_bias(k) for k in Ks], color=THEORY, lw=1.5, label="theory K(r−1)(c−1)/(2n)")
-    ax.set_xticks(Ks); ax.invert_xaxis(); ax.set_xlabel("news states seen by the auditor, K"); ax.set_ylabel("null bias of γ (nats)")
+    ax.set_xticks(Ks); ax.invert_xaxis(); ax.set_xlabel("news states seen by the auditor, K"); ax.set_ylabel("null bias of $\\hat{I}$ (nats)")
     ax.legend(frameon=False, fontsize=7); fig.tight_layout(); fig.savefig("figures/fig3_null_bias.png", dpi=200)
 
 
+I_HAT = r"$\hat{I}$"
 BIC = "#1baf7a"  # dataviz palette slot 3; contrast WARN, so it always has its own marker (triangle) and legend label
 
 
@@ -145,7 +146,7 @@ def fig_dial(R, R6000=None):
             kb, nb = bic_count(path, c, f"K{k}", p, k, n)
             lo, hi = wilson(kb, nb)
             ax.errorbar(i, kb / nb, yerr=[[kb / nb - lo], [hi - kb / nb]], fmt="^", color=BIC, ms=5, lw=1.2, capsize=0,
-                        label="Bayes rule (2nγ > K log n)" if ax is axs[0] and i == 0 else None)
+                        label="Bayes-factor rule (2n$\\hat{I}$ > K log n)" if ax is axs[0] and i == 0 else None)
         if c == "E2":
             I = [theory.true_cmi(sim.BETA, 0.0, sim.DIAL[f"K{k}"]) for k in Ks]
             ax.plot(range(4), [theory.flag_rate(x, k, n) for x, k in zip(I, Ks)], color=THEORY, lw=1.5, label="theory, test only" if ax is axs[0] else None)
@@ -162,9 +163,9 @@ def fig_hero(path="results/pooled.csv"):
     P = {(r["source"], r["C"], r["rate"]): r for r in csv.DictReader(open(path)) if r["condition"] == "E2"}
     Ks = [5, 3, 2, 1]
     I = [theory.true_cmi(sim.BETA, 0.0, sim.DIAL[f"K{k}"]) for k in Ks]
-    fig, axs = plt.subplots(1, 2, figsize=(8, 3.2), sharey=True)
-    for ax, (rate, pred, title) in zip(axs, [("test", theory.flag_rate, "(a) permutation test, 5% level"),
-                                             ("bayes", theory.bic_flag_rate, "(b) Bayes rule: 2nγ > K log n")]):
+    fig, axs = plt.subplots(1, 2, figsize=(6.6, 3.0), sharey=True)
+    for ax, (rate, pred, title) in zip(axs, [("test", theory.flag_rate, "(a) standard test, 5% level"),
+                                             ("bayes", theory.bic_flag_rate, "(b) Bayes-factor rule: reject if 2n$\\hat{I}$ > K log n")]):
         for src, n, col, mk in [("dial.csv", 600, TEST, "o"), ("dial_T6000.csv", 6000, FLAG, "s")]:
             ax.plot(range(4), [pred(x, k, n) for x, k in zip(I, Ks)], color=col, lw=1.3, alpha=0.7)
             for i, k in enumerate(Ks):
@@ -173,11 +174,34 @@ def fig_hero(path="results/pooled.csv"):
                 e, lo, hi = float(r["estimate"]), float(r["lo"]), float(r["hi"])
                 ax.errorbar(i + (0.06 if n == 6000 else -0.06), e, yerr=[[e - lo], [hi - e]], fmt=mk, color=col, ms=5, lw=1.2,
                             capsize=0, label=f"{n:,} rounds: data (line = prediction)" if i == 0 else None)
-        ax.axhline(0.05, color=THEORY, ls=":", lw=1)
+        ax.axhline(0.05, color=THEORY, ls=":", lw=1, label="5% target" if ax is axs[0] else None)
         ax.set_xticks(range(4), ["5\n(complete)", "3", "2", "none"]); ax.set_xlabel("news levels the auditor records")
         ax.set_title(title, color=INK, fontsize=9)
-    axs[0].set_ylabel("innocent pairs rejected"); axs[0].set_ylim(-0.02, 1.02); axs[0].legend(frameon=False, fontsize=7, loc="upper left")
+    axs[0].set_ylabel("innocent pairs rejected"); axs[0].set_ylim(-0.02, 1.02); axs[0].legend(frameon=False, fontsize=7.5, loc="upper left")
     fig.tight_layout(); fig.savefig("figures/fig_hero.png", dpi=200)
+
+
+def fig_method(out="figures/fig1_method.png"):
+    """Figure 1: the two tests as flat box-and-arrow rows, drawn at page width so its text prints at about 8 pt."""
+    from matplotlib.patches import FancyBboxPatch
+    rows = [("STANDARD TEST", TEST, ["Log:\nnews and every\nseller's price", "Auditor's record:\nthe news levels\nit keeps",
+                                      "Shuffle B's prices\nwithin each\nrecorded level", f"Reject the pair\nif {I_HAT} beats\n95% of shuffles"]),
+            ("RE-ASKING", FLAG, ["Logged prompt\nof each seller,\neach round", "Same model\nre-asked 4 times\non that prompt",
+                                 "Rank of the\nreal ask among\nthe re-asks", "Do two sellers'\nranks move\ntogether?",
+                                 "Reject the pair\nif above 95%\nof random swaps"])]
+    fig, ax = plt.subplots(figsize=(6.6, 3.0)); ax.set_xlim(0, 6.6); ax.set_ylim(0, 3.0); ax.axis("off")
+    w, gap = 1.08, 0.23
+    for r, (label, col, boxes) in enumerate(rows):
+        y = 2.05 - 1.45 * r
+        ax.text(0.02, y + 0.55, label, fontsize=8, family="monospace", color=col, weight="bold")
+        for i, t in enumerate(boxes):
+            x = 0.02 + i * (w + gap)
+            ax.add_patch(FancyBboxPatch((x, y - 0.42), w, 0.84, boxstyle="round,pad=0.01,rounding_size=0.06",
+                                        fc="#fcfcfb", ec=col, lw=1.2))
+            ax.text(x + w / 2, y, t, ha="center", va="center", fontsize=7.6, color=INK, linespacing=1.25)
+            if i < len(boxes) - 1:
+                ax.annotate("", xy=(x + w + gap - 0.02, y), xytext=(x + w + 0.02, y), arrowprops=dict(arrowstyle="->", color=INK, lw=1))
+    fig.tight_layout(pad=0.2); fig.savefig(out, dpi=250)
 
 
 if __name__ == "__main__":
@@ -188,5 +212,5 @@ if __name__ == "__main__":
     if os.path.exists("results/lambda.csv"): fig2(rates("results/lambda.csv"))
     if os.path.exists("results/dial.csv"):
         fig3(); fig_dial(rates("results/dial.csv"), rates("results/dial_T6000.csv") if os.path.exists("results/dial_T6000.csv") else None)
-    pooled_table(); fig_hero()
+    pooled_table(); fig_hero(); fig_method()
     print("wrote figures/")

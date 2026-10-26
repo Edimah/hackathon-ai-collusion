@@ -199,7 +199,7 @@ def write_results(conds, done, out=os.path.join(os.path.dirname(ROOT), "results"
 
 
 def figure(path=os.path.join(os.path.dirname(ROOT), "results", "replay.csv"),
-           out=os.path.join(os.path.dirname(ROOT), "figures", "fig5_replay.png"), col="gamma", ylabel="γ (nats)"):
+           out=os.path.join(os.path.dirname(ROOT), "figures", "fig5_replay.png"), col="gamma", ylabel=r"$\hat{I}$ (nats)"):
     """Observed γ vs the 95th percentile of its replay null, one column per pair-run, S then C1. Labelled pilot."""
     import csv
     import matplotlib; matplotlib.use("Agg"); import matplotlib.pyplot as plt
@@ -209,7 +209,7 @@ def figure(path=os.path.join(os.path.dirname(ROOT), "results", "replay.csv"),
     for i, r in enumerate(rows):
         x = i + (i >= 9)  # gap between S and C1
         ax.plot([x, x], [float(r["null_mean"]), float(r["q95"])], color=F.TEST, lw=2, label="replay null: mean to 95th pct." if i == 0 else None)
-        ax.plot(x, float(r[col]), "s", color=F.FLAG, ms=5, label=f"observed {ylabel.split()[0]}" if i == 0 else None)
+        ax.plot(x, float(r[col]), "s", color=F.FLAG, ms=5, label="observed " + ylabel.split(" (")[0] if i == 0 else None)
     ax.set_xticks([i + (i >= 9) for i in range(len(rows))], [f"{r['condition']} s{r['seed']}\n({r['A']},{r['B']})" for r in rows], fontsize=6)
     ax.set_ylabel(ylabel); ax.set_title("Pilot, replay test (3 runs each): S left, C1 right; coupled pair in C1 = (1,2)", color=F.INK, fontsize=8)
     ax.legend(frameon=False, fontsize=7); fig.tight_layout(); fig.savefig(out, dpi=200)
