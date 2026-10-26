@@ -8,3 +8,5 @@ results/debug.csv
 BRIEF.md
 CLAUDE.md
 llm/work/
+*.docx
+paper/
