@@ -198,21 +198,31 @@ def write_results(conds, done, out=os.path.join(os.path.dirname(ROOT), "results"
     print(f"wrote {out}")
 
 
-def figure(path=os.path.join(os.path.dirname(ROOT), "results", "replay.csv"),
-           out=os.path.join(os.path.dirname(ROOT), "figures", "fig5_replay.png"), col="gamma", ylabel=r"$\hat{I}$ (nats)"):
-    """Observed γ vs the 95th percentile of its replay null, one column per pair-run, S then C1. Labelled pilot."""
+def figure(out=os.path.join(os.path.dirname(ROOT), "figures", "fig_reask_tests.png")):
+    """Re-asking tests, stacked: (a) pre-registered binary statistic (results/replay.csv), (b) rank statistic
+    (results/replay_rank.csv). One column per pair and game; games without a planted pair left, planted games right."""
     import csv
     import matplotlib; matplotlib.use("Agg"); import matplotlib.pyplot as plt
     sys.path.insert(0, os.path.dirname(ROOT)); import figures as F
-    rows = list(csv.DictReader(open(path)))
-    fig, ax = plt.subplots(figsize=(7, 3))
-    for i, r in enumerate(rows):
-        x = i + (i >= 9)  # gap between S and C1
-        ax.plot([x, x], [float(r["null_mean"]), float(r["q95"])], color=F.TEST, lw=2, label="replay null: mean to 95th pct." if i == 0 else None)
-        ax.plot(x, float(r[col]), "s", color=F.FLAG, ms=5, label="observed " + ylabel.split(" (")[0] if i == 0 else None)
-    ax.set_xticks([i + (i >= 9) for i in range(len(rows))], [f"{r['condition']} s{r['seed']}\n({r['A']},{r['B']})" for r in rows], fontsize=6)
-    ax.set_ylabel(ylabel); ax.set_title("Pilot, replay test (3 runs each): S left, C1 right; coupled pair in C1 = (1,2)", color=F.INK, fontsize=8)
-    ax.legend(frameon=False, fontsize=7); fig.tight_layout(); fig.savefig(out, dpi=200)
+    base = os.path.join(os.path.dirname(ROOT), "results")
+    panels = [("replay.csv", "gamma", r"$\hat{I}$ on raised-or-not moves", "(a) pre-registered binary statistic"),
+              ("replay_rank.csv", "c", r"rank co-movement $S_{ij}$", "(b) rank statistic, chosen after inspecting the planted games")]
+    fig, axs = plt.subplots(2, 1, figsize=(6.6, 4.8))
+    for ax, (f, col, ylabel, title) in zip(axs, panels):
+        rows = list(csv.DictReader(open(os.path.join(base, f))))
+        for i, r in enumerate(rows):
+            x = i + (i >= 9)  # gap between the two groups
+            planted = r["condition"] == "C1" and r["A"] + r["B"] == "12"
+            ax.plot([x, x], [float(r["null_mean"]), float(r["q95"])], color=F.TEST, lw=2.2, label="re-asking comparison: mean to 95th percentile" if i == 0 else None)
+            ax.plot(x, float(r[col]), "s", color=F.GREEN if planted else F.FLAG, ms=5,
+                    label="observed, planted pair" if planted and i == 9 else ("observed, other pairs" if i == 0 else None))
+        ax.set_xticks([i + (i >= 9) for i in range(len(rows))], [f"g{int(r['seed']) + 1}\n{r['A']},{r['B']}" for r in rows], fontsize=6)
+        ax.set_ylabel(ylabel, fontsize=7.5); ax.set_title(title, color=F.INK, fontsize=8, pad=16); ax.tick_params(axis="y", labelsize=7)
+        ax.text(0.27, 1.01, "games without a planted pair", transform=ax.transAxes, ha="center", va="bottom", fontsize=7, color=F.MUTED if hasattr(F, "MUTED") else F.INK)
+        ax.text(0.77, 1.01, "planted games (planted pair = 1,2)", transform=ax.transAxes, ha="center", va="bottom", fontsize=7, color=F.INK)
+    axs[1].set_xlabel("game (g1–g3) and seller pair; a pair is flagged when its square is above its bar", fontsize=7)
+    fig.legend(*axs[1].get_legend_handles_labels(), loc="upper center", ncol=3, frameon=False, fontsize=6.8)
+    fig.tight_layout(rect=(0, 0, 1, 0.95)); fig.savefig(out, dpi=250)
     print(f"wrote {out}")
 
 
@@ -246,7 +256,7 @@ if __name__ == "__main__":
                     print(f"{cond} seed {seed}: per-seller mean u - 0.5 {np.round(ps, 3)}; pairs "
                           f"{[(f'{r[0]}{r[1]}', round(r[2], 4), round(r[3], 4), r[5]) for r in rows]}")
         print(f"wrote {out}")
-        figure(out, os.path.join(os.path.dirname(ROOT), "figures", "fig5c_replay_rank.png"), col="c", ylabel="c (rank co-movement)")
+        figure()
     if a.test:
         done = {}
         for l in open(CACHE):
@@ -254,7 +264,6 @@ if __name__ == "__main__":
         if a.lowered:
             out = os.path.join(os.path.dirname(ROOT), "results", "replay_exploratory.csv")
             write_results({c: v for c, v in runs.items() if v}, done, out, lowered=True)
-            figure(out, os.path.join(os.path.dirname(ROOT), "figures", "fig5b_replay_exploratory.png"))
         else:
             write_results({c: v for c, v in runs.items() if v}, done)
             figure()

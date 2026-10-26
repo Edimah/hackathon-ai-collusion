@@ -1,5 +1,5 @@
 """Block B pilot analysis: seller asks per round -> binary move (raised or not) -> the scripted detector.
-Writes results/llm.csv (columns as results/runs.csv + models) and figures/fig4_llm.png. Run from the repo root."""
+Writes results/llm.csv (columns as results/runs.csv + models). Run from the repo root."""
 import csv, glob, json, os, re, sys
 import numpy as np
 sys.path.insert(0, ".")
@@ -57,16 +57,4 @@ if __name__ == "__main__":
         w = csv.writer(fh)
         w.writerow(["condition", "C", "seed", "A", "B", "gamma", "q95", "null_mean", "flag", "models"])
         w.writerows(rows)
-    import matplotlib.pyplot as plt
-    R = figures.rates("results/llm.csv")
-    fig, ax = plt.subplots(figsize=(5, 3))
-    for i, (cond, label) in enumerate([("S", "S: Haiku ×3"), ("D", "D: Haiku, Sonnet, Haiku")]):
-        for j, p in enumerate(["12", "13", "23"]):
-            if (cond, "identity", p) in R:
-                figures.dots(ax, i * 4 + j, *R[(cond, "identity", p)], label=i == 0 and j == 0)
-    ax.axhline(0.05, color=figures.THEORY, ls="--", lw=1)
-    ax.set_xticks([0, 1, 2, 4, 5, 6], ["(1,2)", "(1,3)", "(2,3)"] * 2)
-    ax.set_title("Pilot (3 seeds): S left, D right", color=figures.INK); ax.set_ylabel("share of seeds")
-    ax.set_ylim(-0.02, 1.02); ax.legend(frameon=False, fontsize=7)
-    fig.tight_layout(); fig.savefig("figures/fig4_llm.png", dpi=200)
-    print("wrote results/llm.csv, figures/fig4_llm.png")
+    print("wrote results/llm.csv")

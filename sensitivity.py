@@ -58,10 +58,11 @@ if __name__ == "__main__":
             w.writerow(row); print(f"{row[0]:<34} first {row[1]:.2f} [{row[2]:.2f}, {row[3]:.2f}]  total {row[4]:.2f} [{row[5]:.2f}, {row[6]:.2f}]")
     import matplotlib; matplotlib.use("Agg"); import matplotlib.pyplot as plt
     import figures as F
-    fig, ax = plt.subplots(figsize=(5.5, 2.8))
+    fig, ax = plt.subplots(figsize=(5.0, 2.6))
     y = np.arange(4)[::-1]
     ax.barh(y + 0.18, ST, 0.34, xerr=[ST - loT, hiT - ST], color=F.TEST, label="total index")
     ax.barh(y - 0.18, S1, 0.34, xerr=[S1 - lo1, hi1 - S1], color=F.FLAG, label="first-order index")
-    ax.set_yticks(y, NAMES, fontsize=8); ax.set_xlabel("Sobol index of the predicted false-positive rate")
-    ax.legend(frameon=False, fontsize=7); fig.tight_layout(); fig.savefig("figures/figA_sobol.png", dpi=200)
+    labels = ["news sensitivity β", "unrecorded shared input λ", "auditor's view (news categories)", "number of rounds n"]
+    ax.set_yticks(y, labels, fontsize=8); ax.set_xlabel("Sobol index of the predicted false-positive rate")
+    ax.legend(frameon=False, fontsize=7); fig.tight_layout(); fig.savefig("figures/figA_sobol.png", dpi=250)
     print("wrote results/sobol.csv, figures/figA_sobol.png")

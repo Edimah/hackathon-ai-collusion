@@ -5,9 +5,10 @@ import numpy as np
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+import matplotlib.ticker
 import sim, theory
 
-TEST, FLAG, THEORY, INK = "#2a78d6", "#eb6834", "#5f5e5a", "#3d3c38"  # validated pair (dataviz palette slots 1-2)
+TEST, FLAG, THEORY, INK, GREEN = "#2a78d6", "#eb6834", "#5f5e5a", "#3d3c38", "#2e9e62"  # validated pair (dataviz palette slots 1-2)
 plt.rcParams.update({"axes.spines.top": False, "axes.spines.right": False, "axes.edgecolor": INK,
                      "axes.labelcolor": INK, "xtick.color": INK, "ytick.color": INK, "font.size": 9})
 
@@ -72,123 +73,106 @@ def rates(path):
 
 
 def dots(ax, x, k_test, k_flag, n, dx=0.12, label=True):
-    """Test-only rate and flag rate side by side at x, each with its Wilson interval."""
-    for k, col, mk, off, name in [(k_test, TEST, "o", -dx, "standard test ($\\hat{I}$ above its 95% shuffle threshold)"), (k_flag, FLAG, "s", dx, "test + ranking rule (Γ)")]:
+    """Standard-test rate and ranking-rule rate side by side at x, each with its Wilson interval."""
+    for k, col, mk, off, name in [(k_test, TEST, "o", -dx, "standard test"), (k_flag, FLAG, "s", dx, "standard test + ranking rule (Γ)")]:
         lo, hi = wilson(k, n)
-        ax.errorbar(x + off, k / n, yerr=[[k / n - lo], [hi - k / n]], fmt=mk, color=col, ms=5, lw=1.2, capsize=0,
+        ax.errorbar(x + off, k / n, yerr=[[k / n - lo], [hi - k / n]], fmt=mk, color=col, ms=4.5, lw=1.1, capsize=0,
                     label=name if label else None)
 
 
 def fig1(R):
-    panels = [("E1", "identity"), ("E2", "identity"), ("E2", "constant"), ("E2b", "identity"),
-              ("E3", "identity"), ("E4", "identity"), ("E4", "constant")]
+    """Appendix: every condition and pair, 600 rounds, in plain condition names (two rows so it prints legibly)."""
+    panels = [("E1", "identity", "prices ignore news,\nno planted pair (50 repeats)"), ("E2", "identity", "prices follow news,\nall five news levels"),
+              ("E2", "constant", "prices follow news,\nno news information"), ("E2b", "identity", "hidden shared input\nfor sellers 1 and 4"),
+              ("E3", "identity", "planted pair (2,3),\nprices ignore news"), ("E4", "identity", "planted pair (2,3),\nall five news levels"),
+              ("E4", "constant", "planted pair (2,3),\nno news information")]
     pairs = ["12", "13", "14", "23", "24", "34"]
-    fig, axs = plt.subplots(1, len(panels), figsize=(14, 2.8), sharey=True)
-    for i, (ax, (c, C)) in enumerate(zip(axs, panels)):
+    fig, axs = plt.subplots(2, 4, figsize=(6.6, 4.6), sharey=True)
+    for i, (ax, (c, C, title)) in enumerate(zip(axs.flat, panels)):
         for j, p in enumerate(pairs):
-            dots(ax, j, *R[(c, C, p)], label=i == 0 and j == 0)
-        ax.axhline(0.05, color=THEORY, ls="--", lw=1)
-        ax.set_xticks(range(6), [f"({p[0]},{p[1]})" for p in pairs], rotation=90)
-        ax.set_title(f"{c}, news {'seen' if C == 'identity' else 'hidden'}" if c in ("E2", "E4") else c, color=INK)
-    axs[0].set_ylabel("share of seeds"); axs[0].set_ylim(-0.02, 1.02)
-    fig.legend(*axs[0].get_legend_handles_labels(), loc="upper right", frameon=False, ncol=2)
-    fig.tight_layout(rect=(0, 0, 1, 0.9)); fig.savefig("figures/fig1_flag_rates.png", dpi=200)
+            dots(ax, j, *R[(c, C, p)], dx=0.15, label=i == 0 and j == 0)
+        ax.axhline(0.05, color=THEORY, ls="--", lw=0.9)
+        ax.set_xticks(range(6), [f"{p[0]},{p[1]}" for p in pairs], fontsize=6.5)
+        ax.set_title(title, color=INK, fontsize=7)
+        ax.tick_params(axis="y", labelsize=7)
+    axs.flat[-1].axis("off")
+    axs[0, 0].set_ylabel("share of repeats flagged", fontsize=7.5); axs[1, 0].set_ylabel("share of repeats flagged", fontsize=7.5)
+    axs[0, 0].set_ylim(-0.02, 1.02)
+    axs.flat[-1].legend(*axs[0, 0].get_legend_handles_labels(), loc="center", frameon=False, fontsize=7, title="seller pair (x-axis)\ndashed line: 5%", title_fontsize=7)
+    fig.tight_layout(pad=0.3); fig.savefig("figures/fig1_flag_rates.png", dpi=250)
 
 
 def fig2(R):
+    """Appendix: hidden shared input of strength λ for sellers 1 and 4, complete record, 600 rounds."""
     lams = [c[3] for c in sim.LAMBDAS]
-    fig, ax = plt.subplots(figsize=(4.5, 3.2))
+    fig, ax = plt.subplots(figsize=(4.3, 3.0))
     for i, (name, *_ ) in enumerate(sim.LAMBDAS):
         dots(ax, lams[i], *R[(name, "identity", "14")], dx=0.03, label=i == 0)
     grid = np.linspace(0, 2, 81)
     ax.plot(grid, [theory.flag_rate(theory.true_cmi(sim.BETA, l, sim.IDENTITY), 5) for l in grid], color=THEORY, lw=1.5,
-            label="theory, test only (non-central χ²)")
+            label="prediction from the model (standard test)")
     ax.axhline(0.05, color=THEORY, ls="--", lw=1)
-    ax.set_xlabel("λ (shared hidden term, agents 1 and 4)"); ax.set_ylabel("share of seeds, pair (1,4)")
+    ax.set_xlabel("λ, strength of the unrecorded shared input"); ax.set_ylabel("share of repeats flagged, pair (1,4)")
     ax.set_ylim(-0.02, 1.02); ax.legend(frameon=False, fontsize=7)
-    fig.tight_layout(); fig.savefig("figures/fig2_lambda.png", dpi=200)
+    fig.tight_layout(); fig.savefig("figures/fig2_lambda.png", dpi=250)
 
 
 def fig3(path="results/dial.csv"):
+    """Appendix: average shuffled statistic (non-colluding pairs, 600 rounds) against K/(2n)."""
     m = defaultdict(list)
     for r in csv.DictReader(open(path)):
         if r["condition"] == "E2": m[r["C"]].append(float(r["null_mean"]))
     Ks = [5, 3, 2, 1]
-    fig, ax = plt.subplots(figsize=(4, 3))
-    ax.plot(Ks, [np.mean(m[f"K{k}"]) for k in Ks], "o", color=TEST, ms=6, label="mean of shuffled $\\hat{I}$ (E2)")
-    ax.plot(Ks, [theory.null_bias(k) for k in Ks], color=THEORY, lw=1.5, label="theory K(r−1)(c−1)/(2n)")
-    ax.set_xticks(Ks); ax.invert_xaxis(); ax.set_xlabel("news states seen by the auditor, K"); ax.set_ylabel("null bias of $\\hat{I}$ (nats)")
-    ax.legend(frameon=False, fontsize=7); fig.tight_layout(); fig.savefig("figures/fig3_null_bias.png", dpi=200)
+    fig, ax = plt.subplots(figsize=(3.6, 2.8))
+    ax.plot(Ks, [np.mean(m[f"K{k}"]) for k in Ks], "o", color=TEST, ms=6, label=f"average of 500 shuffled {I_HAT}")
+    ax.plot(Ks, [theory.null_bias(k) for k in Ks], color=THEORY, lw=1.5, label="approximation $K/(2n)$")
+    ax.set_xticks(Ks, ["5", "3", "2", "no news"]); ax.invert_xaxis()
+    ax.set_xlabel("news categories used by the screen"); ax.set_ylabel(f"{I_HAT} under shuffling (nats)")
+    ax.legend(frameon=False, fontsize=7); fig.tight_layout(); fig.savefig("figures/fig3_null_bias.png", dpi=250)
 
 
 I_HAT = r"$\hat{I}$"
 BIC = "#1baf7a"  # dataviz palette slot 3; contrast WARN, so it always has its own marker (triangle) and legend label
 
 
-def bic_count(path, c, C, p, K, n):
-    """Seeds where the Bayes (BIC) rule flags the pair: 2n·γ > K·log n (n rounds, K news states seen)."""
-    v = [2 * n * float(r["gamma"]) > K * np.log(n) for r in csv.DictReader(open(path)) if (r["condition"], r["C"], r["A"] + r["B"]) == (c, C, p)]
-    return sum(v), len(v)
-
-
-def fig_dial(R, R6000=None):
-    """Dial: E2 innocent pair at T = 600 (and T = 6000 if given), E4 pairs at T = 600. Test-only, flag and Bayes
-    (BIC) rates with Wilson intervals; theory lines for E2: test (solid), BIC (dashed). 5% reference dotted."""
-    Ks = [5, 3, 2, 1]
-    panels = [("E2", "14", "E2, innocent pair (1,4), T = 600", R, "results/dial.csv", 600)]
-    if R6000: panels.append(("E2", "14", "E2, innocent pair (1,4), T = 6000", R6000, "results/dial_T6000.csv", 6000))
-    panels += [("E4", "14", "E4, innocent pair (1,4), T = 600", R, "results/dial.csv", 600),
-               ("E4", "23", "E4, colluding pair (2,3), T = 600", R, "results/dial.csv", 600)]
-    fig, axs = plt.subplots(1, len(panels), figsize=(3.4 * len(panels), 3.2), sharey=True)
-    for ax, (c, p, title, RR, path, n) in zip(axs, panels):
-        for i, k in enumerate(Ks):
-            dots(ax, i, *RR[(c, f"K{k}", p)], dx=0.15, label=ax is axs[0] and i == 0)
-            kb, nb = bic_count(path, c, f"K{k}", p, k, n)
-            lo, hi = wilson(kb, nb)
-            ax.errorbar(i, kb / nb, yerr=[[kb / nb - lo], [hi - kb / nb]], fmt="^", color=BIC, ms=5, lw=1.2, capsize=0,
-                        label="Bayes-factor rule (2n$\\hat{I}$ > K log n)" if ax is axs[0] and i == 0 else None)
-        if c == "E2":
-            I = [theory.true_cmi(sim.BETA, 0.0, sim.DIAL[f"K{k}"]) for k in Ks]
-            ax.plot(range(4), [theory.flag_rate(x, k, n) for x, k in zip(I, Ks)], color=THEORY, lw=1.5, label="theory, test only" if ax is axs[0] else None)
-            ax.plot(range(4), [theory.bic_flag_rate(x, k, n) for x, k in zip(I, Ks)], color=THEORY, lw=1.5, ls="--", label="theory, Bayes rule" if ax is axs[0] else None)
-        ax.axhline(0.05, color=THEORY, ls=":", lw=1)
-        ax.set_xticks(range(4), [str(k) for k in Ks]); ax.set_xlabel("news states seen by the auditor, K"); ax.set_title(title, color=INK, fontsize=8)
-    axs[0].set_ylabel("share of seeds"); axs[0].set_ylim(-0.02, 1.02); axs[0].legend(frameon=False, fontsize=6)
-    fig.tight_layout(); fig.savefig("figures/fig_dial.png", dpi=200)
-
-
 def fig_hero(path="results/pooled.csv"):
-    """Hero figure: innocent pairs (E2, pooled over the 6 pairs, cluster bootstrap by seed) rejected vs the auditor's
-    information level. (a) permutation test, (b) Bayes rule; data at 600 and 6,000 rounds, lines = prediction from the model."""
+    """Main figure: non-colluding pairs wrongly flagged vs the news categories the auditor records (E2, six pairs pooled,
+    cluster bootstrap by repeat). (a) standard test, (b) stricter BIC-based rule; data at 600 and 6,000 rounds, lines = prediction."""
     P = {(r["source"], r["C"], r["rate"]): r for r in csv.DictReader(open(path)) if r["condition"] == "E2"}
     Ks = [5, 3, 2, 1]
     I = [theory.true_cmi(sim.BETA, 0.0, sim.DIAL[f"K{k}"]) for k in Ks]
-    fig, axs = plt.subplots(1, 2, figsize=(6.6, 3.0), sharey=True)
+    fig, axs = plt.subplots(1, 2, figsize=(6.6, 3.1), sharey=True)
     for ax, (rate, pred, title) in zip(axs, [("test", theory.flag_rate, "(a) standard test, 5% level"),
-                                             ("bayes", theory.bic_flag_rate, "(b) Bayes-factor rule: reject if 2n$\\hat{I}$ > K log n")]):
+                                             ("bayes", theory.bic_flag_rate, "(b) stricter BIC-based rule")]):
         for src, n, col, mk in [("dial.csv", 600, TEST, "o"), ("dial_T6000.csv", 6000, FLAG, "s")]:
             ax.plot(range(4), [pred(x, k, n) for x, k in zip(I, Ks)], color=col, lw=1.3, alpha=0.7)
             for i, k in enumerate(Ks):
                 r = P.get((src, f"K{k}", rate))
                 if r is None: continue
                 e, lo, hi = float(r["estimate"]), float(r["lo"]), float(r["hi"])
-                ax.errorbar(i + (0.06 if n == 6000 else -0.06), e, yerr=[[e - lo], [hi - e]], fmt=mk, color=col, ms=5, lw=1.2,
-                            capsize=0, label=f"{n:,} rounds: data (line = prediction)" if i == 0 else None)
+                dx = 0.06 if n == 6000 else -0.06
+                ax.errorbar(i + dx, e, yerr=[[e - lo], [hi - e]], fmt=mk, color=col, ms=5, lw=1.2, capsize=0,
+                            label=f"{n:,} rounds (line: prediction)" if i == 0 else None)
+                if 0.004 < e < 0.995:  # print the measured rate next to every point that is not 0% or 100%
+                    ax.annotate(f"{e:.1%}", (i + dx, e), xytext=(7 if n == 6000 else -7, 8 if i == 0 else 0), textcoords="offset points",
+                                ha="left" if n == 6000 else "right", va="center", fontsize=6.5, color=col)
         ax.axhline(0.05, color=THEORY, ls=":", lw=1, label="5% target" if ax is axs[0] else None)
-        ax.set_xticks(range(4), ["5\n(complete)", "3", "2", "none"]); ax.set_xlabel("news levels the auditor records")
-        ax.set_title(title, color=INK, fontsize=9)
-    axs[0].set_ylabel("innocent pairs rejected"); axs[0].set_ylim(-0.02, 1.02); axs[0].legend(frameon=False, fontsize=7.5, loc="upper left")
-    fig.tight_layout(); fig.savefig("figures/fig_hero.png", dpi=200)
+        ax.set_xticks(range(4), ["5\n(all levels)", "3", "2", "no news"]); ax.set_xlabel("news categories used by the screen")
+        ax.set_title(title, color=INK, fontsize=8.5)
+    axs[0].set_ylabel("non-colluding pairs wrongly flagged"); axs[0].set_ylim(-0.03, 1.05)
+    axs[0].yaxis.set_major_formatter(matplotlib.ticker.PercentFormatter(1.0)); axs[0].legend(frameon=False, fontsize=7, loc="upper left")
+    fig.tight_layout(); fig.savefig("figures/fig_hero.png", dpi=250)
 
 
 def fig_method(out="figures/fig1_method.png"):
     """Figure 1: the two tests as flat box-and-arrow rows, drawn at page width so its text prints at about 8 pt."""
     from matplotlib.patches import FancyBboxPatch
-    rows = [("STANDARD TEST", TEST, ["Log:\nnews and every\nseller's price", "Auditor's record:\nthe news levels\nit keeps",
-                                      "Shuffle B's prices\nwithin each\nrecorded level", f"Reject the pair\nif {I_HAT} beats\n95% of shuffles"]),
-            ("RE-ASKING", FLAG, ["Logged prompt\nof each seller,\neach round", "Same model\nre-asked 4 times\non that prompt",
-                                 "Rank of the\nreal ask among\nthe re-asks", "Do two sellers'\nranks move\ntogether?",
-                                 "Reject the pair\nif above 95%\nof random swaps"])]
+    rows = [("STANDARD TEST", TEST, ["Log:\nnews and every\nseller's price", "Auditor's view:\nnews categories\nused by the screen",
+                                      "Shuffle B's prices\n500 times within\neach category", f"{I_HAT}: estimated\nremaining\ndependence",
+                                      f"Flag if {I_HAT} is\nstrictly above the\n95th percentile\nof the shuffles"]),
+            ("RE-ASKING", FLAG, ["Recorded prompt\nof each seller,\nplanted note\nremoved", "Same model,\nsame prompt,\nasked 4 more times",
+                                 "Rank original ask\namong usable\nre-asked answers", "Remove mean rank\nper news category;\nco-movement of\nthe two sellers",
+                                 "Flag if strictly\nabove the 95th\npercentile of\n500 relabellings"])]
     fig, ax = plt.subplots(figsize=(6.6, 3.0)); ax.set_xlim(0, 6.6); ax.set_ylim(0, 3.0); ax.axis("off")
     w, gap = 1.08, 0.23
     for r, (label, col, boxes) in enumerate(rows):
@@ -198,7 +182,7 @@ def fig_method(out="figures/fig1_method.png"):
             x = 0.02 + i * (w + gap)
             ax.add_patch(FancyBboxPatch((x, y - 0.42), w, 0.84, boxstyle="round,pad=0.01,rounding_size=0.06",
                                         fc="#fcfcfb", ec=col, lw=1.2))
-            ax.text(x + w / 2, y, t, ha="center", va="center", fontsize=7.6, color=INK, linespacing=1.25)
+            ax.text(x + w / 2, y, t, ha="center", va="center", fontsize=7.0, color=INK, linespacing=1.25)
             if i < len(boxes) - 1:
                 ax.annotate("", xy=(x + w + gap - 0.02, y), xytext=(x + w + 0.02, y), arrowprops=dict(arrowstyle="->", color=INK, lw=1))
     fig.tight_layout(pad=0.2); fig.savefig(out, dpi=250)
@@ -211,6 +195,6 @@ if __name__ == "__main__":
     fig1(rates("results/runs.csv"))
     if os.path.exists("results/lambda.csv"): fig2(rates("results/lambda.csv"))
     if os.path.exists("results/dial.csv"):
-        fig3(); fig_dial(rates("results/dial.csv"), rates("results/dial_T6000.csv") if os.path.exists("results/dial_T6000.csv") else None)
+        fig3()
     pooled_table(); fig_hero(); fig_method()
     print("wrote figures/")
