@@ -38,7 +38,7 @@ def cluster_bootstrap_ci(values, cluster_ids, B=10000, alpha=0.05, seed=None):
     return values.mean(), lo, hi
 
 
-def pooled_table(paths=("results/runs.csv", "results/dial.csv"), out="results/pooled.csv"):
+def pooled_table(paths=("results/runs.csv", "results/dial.csv", "results/dial_T6000.csv"), out="results/pooled.csv"):
     """Innocent-pair flag and test rates pooled over pairs, 95% CI by cluster bootstrap over seeds (pairs within a
     seed share the news, so they are not independent). Innocent = not (2,3) in E3/E4, not (1,4) in E2b."""
     with open(out, "w", newline="") as fh:
@@ -46,13 +46,17 @@ def pooled_table(paths=("results/runs.csv", "results/dial.csv"), out="results/po
         w.writerow(["source", "condition", "C", "rate", "estimate", "lo", "hi", "n_seeds"])
         for path in paths:
             rows = defaultdict(list)
+            if not os.path.exists(path): continue
             for r in csv.DictReader(open(path)):
                 p = r["A"] + r["B"]
                 if (r["condition"] in ("E3", "E4") and p == "23") or (r["condition"] == "E2b" and p == "14"): continue
-                rows[(r["condition"], r["C"])].append((r["seed"], float(r["gamma"]) > float(r["q95"]), int(r["flag"])))
+                K = {"identity": 5, "constant": 1}.get(r["C"]) or int(r["C"][1:])  # news levels the auditor sees
+                n = 6000 if "T6000" in path else 600
+                rows[(r["condition"], r["C"])].append((r["seed"], float(r["gamma"]) > float(r["q95"]), int(r["flag"]),
+                                                       2 * n * float(r["gamma"]) > K * np.log(n)))
             for (c, C), v in sorted(rows.items()):
-                seeds = [s for s, _, _ in v]
-                for name, i in (("test", 1), ("flag", 2)):
+                seeds = [x[0] for x in v]
+                for name, i in (("test", 1), ("flag", 2), ("bayes", 3)):
                     est, lo, hi = cluster_bootstrap_ci([x[i] for x in v], seeds, seed=0)
                     w.writerow([os.path.basename(path), c, C, name, est, lo, hi, len(set(seeds))])
     print(f"wrote {out}")
@@ -152,6 +156,30 @@ def fig_dial(R, R6000=None):
     fig.tight_layout(); fig.savefig("figures/fig_dial.png", dpi=200)
 
 
+def fig_hero(path="results/pooled.csv"):
+    """Hero figure: innocent pairs (E2, pooled over the 6 pairs, cluster bootstrap by seed) rejected vs the auditor's
+    information level. (a) permutation test, (b) Bayes rule; data at 600 and 6,000 rounds, lines = prediction from the model."""
+    P = {(r["source"], r["C"], r["rate"]): r for r in csv.DictReader(open(path)) if r["condition"] == "E2"}
+    Ks = [5, 3, 2, 1]
+    I = [theory.true_cmi(sim.BETA, 0.0, sim.DIAL[f"K{k}"]) for k in Ks]
+    fig, axs = plt.subplots(1, 2, figsize=(8, 3.2), sharey=True)
+    for ax, (rate, pred, title) in zip(axs, [("test", theory.flag_rate, "(a) permutation test, 5% level"),
+                                             ("bayes", theory.bic_flag_rate, "(b) Bayes rule: 2nγ > K log n")]):
+        for src, n, col, mk in [("dial.csv", 600, TEST, "o"), ("dial_T6000.csv", 6000, FLAG, "s")]:
+            ax.plot(range(4), [pred(x, k, n) for x, k in zip(I, Ks)], color=col, lw=1.3, alpha=0.7)
+            for i, k in enumerate(Ks):
+                r = P.get((src, f"K{k}", rate))
+                if r is None: continue
+                e, lo, hi = float(r["estimate"]), float(r["lo"]), float(r["hi"])
+                ax.errorbar(i + (0.06 if n == 6000 else -0.06), e, yerr=[[e - lo], [hi - e]], fmt=mk, color=col, ms=5, lw=1.2,
+                            capsize=0, label=f"{n:,} rounds: data (line = prediction)" if i == 0 else None)
+        ax.axhline(0.05, color=THEORY, ls=":", lw=1)
+        ax.set_xticks(range(4), ["5\n(complete)", "3", "2", "none"]); ax.set_xlabel("news levels the auditor records")
+        ax.set_title(title, color=INK, fontsize=9)
+    axs[0].set_ylabel("innocent pairs rejected"); axs[0].set_ylim(-0.02, 1.02); axs[0].legend(frameon=False, fontsize=7, loc="upper left")
+    fig.tight_layout(); fig.savefig("figures/fig_hero.png", dpi=200)
+
+
 if __name__ == "__main__":
     lo, hi = wilson(0, 200)
     assert lo < 1e-12 and 0.01 < hi < 0.03  # 0/200: interval [0, ~1.9%], not zero-width
@@ -160,5 +188,5 @@ if __name__ == "__main__":
     if os.path.exists("results/lambda.csv"): fig2(rates("results/lambda.csv"))
     if os.path.exists("results/dial.csv"):
         fig3(); fig_dial(rates("results/dial.csv"), rates("results/dial_T6000.csv") if os.path.exists("results/dial_T6000.csv") else None)
-    pooled_table()
+    pooled_table(); fig_hero()
     print("wrote figures/")
