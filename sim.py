@@ -128,6 +128,7 @@ if __name__ == "__main__":
     ap.add_argument("--all", action="store_true")
     ap.add_argument("--dial", action="store_true", help="observability dial only")
     ap.add_argument("--lam", action="store_true", help="λ sweep only")
+    ap.add_argument("--dial6000", action="store_true", help="dial on E2 at T = 6000, 50 seeds")
     a = ap.parse_args()
     if a.test: selftest()
     if a.show: show()
@@ -135,3 +136,4 @@ if __name__ == "__main__":
     if a.all: run(T, 100, SHUFFLES, "results/accept.csv"); run(T, SEEDS, SHUFFLES)  # acceptance checks (100 seeds), then the full grid
     if a.all or a.lam: run(T, SEEDS, SHUFFLES, "results/lambda.csv", views={"identity": IDENTITY}, conds=LAMBDAS)  # λ sweep
     if a.all or a.dial: run(T, SEEDS, SHUFFLES, "results/dial.csv", views=DIAL, only=("E2", "E4"))  # observability dial
+    if a.all or a.dial6000: run(6000, 50, SHUFFLES, "results/dial_T6000.csv", views=DIAL, only=("E2",))  # ponytail: 50 seeds, E2 only, to fit the 21:00 stop (Edimah, 25 Oct)
