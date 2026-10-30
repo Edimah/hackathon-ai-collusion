@@ -1,8 +1,9 @@
-# Predicting False Collusion Alerts Under Incomplete Information
+# Predicting Price Collusion False-Alarm Rates Under Incomplete Information
 
 Evidence from a simulated market and an exploratory re-asking of LLM agents.
 
 Edimah SYNESIUS SONGO. AI Collusion Research Sprint (Apart Research), 23–25 October 2026.
+[https://apartresearch.com/sprints/projects/predicting-false-collusion-alerts-under-incomplete-information-evidence-from-a-simulated-market-and-an-exploratory-reasking-of-llm-agents-ue2d] 
 
 ![Less detailed information produces more false positives](docs/gifs/record_dial.gif)
 
